@@ -60,8 +60,12 @@ pub fn handle_event(
             agent.tool_name = tool_name.to_string();
         }
         "PostToolUse" => {
-            // Keep working state — agent is likely thinking/generating between tool calls.
-            // Only Stop/SessionEnd should transition to idle.
+            // If coming from a permission request, clear the fire icon.
+            // Otherwise keep working — tools fire rapidly in sequence.
+            if agent.state == AgentState::Requesting {
+                agent.state = AgentState::Working;
+                agent.tool_name = tool_name.to_string();
+            }
         }
         "PermissionRequest" => {
             agent.state = AgentState::Requesting;

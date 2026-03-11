@@ -24,7 +24,7 @@ fn find_or_create_host(state: &mut DisplayState, client_key: &str) -> Option<Str
     let host_id = format!("G{}", state.next_host_num);
     state.next_host_num += 1;
 
-    let label = if client_key.len() <= 5 {
+    let label = if client_key.len() <= 6 {
         client_key.to_string()
     } else {
         host_id.clone()
