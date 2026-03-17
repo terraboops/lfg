@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# LFG webhook hook — sends Claude Code / Cursor events directly to LFG.
+# LFG webhook hook — sends Claude Code / Cursor / Codex events directly to LFG.
 # No dependencies beyond curl and jq.
 #
 # Usage (Claude Code):
@@ -7,6 +7,9 @@
 #
 # Usage (Cursor):
 #   Add to ~/.cursor/hooks.json
+#
+# Usage (Codex CLI):
+#   Add to ~/.codex/config.toml
 #
 # The script reads hook JSON from stdin, extracts the event info,
 # and POSTs it to LFG's webhook endpoint.
@@ -20,12 +23,12 @@ LFG_TOKEN="${LFG_TOKEN:-}"
 # Read hook payload from stdin
 input=$(cat)
 
-# Extract fields — Claude Code uses PascalCase, Cursor uses camelCase
+# Extract fields — Claude Code uses PascalCase, Cursor uses camelCase, Codex uses snake_case
 hook_event=$(echo "$input" | jq -r '.hook_event_name // .hookEventName // empty' 2>/dev/null)
 session_id=$(echo "$input" | jq -r '.session_id // .sessionId // .conversation_id // .conversationId // empty' 2>/dev/null)
 tool_name=$(echo "$input" | jq -r '.tool_name // .toolName // empty' 2>/dev/null)
 
-# Normalize Cursor camelCase events to PascalCase
+# Normalize event names to PascalCase (handles Cursor camelCase and Codex snake_case)
 case "$hook_event" in
   preToolUse)           hook_event="PreToolUse" ;;
   postToolUse)          hook_event="PostToolUse" ;;
@@ -35,6 +38,12 @@ case "$hook_event" in
   stop)                 hook_event="Stop" ;;
   sessionStart)         hook_event="SessionStart" ;;
   sessionEnd)           hook_event="SessionEnd" ;;
+  pre_tool_use)         hook_event="PreToolUse" ;;
+  post_tool_use)        hook_event="PostToolUse" ;;
+  post_tool_use_failure) hook_event="PostToolUse" ;;
+  permission_request)   hook_event="PermissionRequest" ;;
+  session_start)        hook_event="SessionStart" ;;
+  session_stop)         hook_event="Stop" ;;
 esac
 
 [ -z "$hook_event" ] && exit 0

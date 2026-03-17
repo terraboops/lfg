@@ -1,0 +1,14 @@
+# LFG hook config for OpenAI Codex CLI (standalone)
+# Copy to ~/.codex/config.toml (or merge into existing config)
+
+[[hooks.pre_tool_use]]
+command = "LFG_HOST=codex ~/.local/bin/lfg-hook.sh"
+
+[[hooks.post_tool_use]]
+command = "LFG_HOST=codex ~/.local/bin/lfg-hook.sh"
+
+[[hooks.session_start]]
+command = "LFG_HOST=codex ~/.local/bin/lfg-hook.sh"
+
+[[hooks.stop]]
+command = "LFG_HOST=codex ~/.local/bin/lfg-hook.sh"
