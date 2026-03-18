@@ -162,26 +162,27 @@ chmod +x ~/.local/bin/lfg-hook.sh
 }
 ```
 
-**Codex CLI** — add to `~/.codex/config.toml`:
+**Codex CLI** — Codex uses two files: a feature flag in `~/.codex/config.toml` and hook definitions in `~/.codex/hooks.json`.
 
+`~/.codex/config.toml`:
 ```toml
 [features]
 codex_hooks = true
-
-[[hooks.pre_tool_use]]
-command = "LFG_HOST=codex ~/.local/bin/lfg-hook.sh"
-
-[[hooks.post_tool_use]]
-command = "LFG_HOST=codex ~/.local/bin/lfg-hook.sh"
-
-[[hooks.session_start]]
-command = "LFG_HOST=codex ~/.local/bin/lfg-hook.sh"
-
-[[hooks.stop]]
-command = "LFG_HOST=codex ~/.local/bin/lfg-hook.sh"
 ```
 
-Environment variables: `LFG_URL` (default `http://localhost:5555/webhook`), `LFG_HOST` (default `claude`), `LFG_TOKEN` (unset by default — set to match `--token` if auth is enabled). Set `LFG_HOST=cursor` for Cursor hooks, `LFG_HOST=codex` for Codex CLI.
+`~/.codex/hooks.json`:
+```json
+{
+  "PreToolUse": [{ "command": "LFG_HOST=codex ~/.local/bin/lfg-hook.sh" }],
+  "PostToolUse": [{ "command": "LFG_HOST=codex ~/.local/bin/lfg-hook.sh" }],
+  "SessionStart": [{ "command": "LFG_HOST=codex ~/.local/bin/lfg-hook.sh" }],
+  "Stop": [{ "command": "LFG_HOST=codex ~/.local/bin/lfg-hook.sh" }]
+}
+```
+
+> **Note:** The older `[[hooks.pre_tool_use]]` TOML entries in `config.toml` are not fired by current Codex versions. Use `hooks.json` with PascalCase event names instead.
+
+Environment variables: `LFG_URL` (default `http://127.0.0.1:5555/webhook`), `LFG_HOST` (default `claude`), `LFG_TOKEN` (unset by default — set to match `--token` if auth is enabled). Set `LFG_HOST=cursor` for Cursor hooks, `LFG_HOST=codex` for Codex CLI.
 
 #### Option B: With boopifier (adds sound alerts, multi-handler routing)
 
@@ -194,7 +195,7 @@ cp examples/hooks/boopifier-cursor.json ~/.config/lfg/
 cp examples/hooks/boopifier-codex.json ~/.config/lfg/
 ```
 
-Then point your IDE hooks at boopifier — see `examples/hooks/claude-code-boopifier.json`, `examples/hooks/cursor-boopifier.json`, and `examples/hooks/codex-boopifier.toml` for the hook configs.
+Then point your IDE hooks at boopifier — see `examples/hooks/claude-code-boopifier.json`, `examples/hooks/cursor-boopifier.json`, and `examples/hooks/codex-boopifier.json` (plus `codex-boopifier.toml` for the feature flag) for the hook configs.
 
 Boopifier adds features like sound alerts on Stop events, per-host sprite themes, and multi-destination routing.
 

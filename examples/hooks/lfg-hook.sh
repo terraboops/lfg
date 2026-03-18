@@ -16,7 +16,7 @@
 
 set -euo pipefail
 
-LFG_URL="${LFG_URL:-http://localhost:5555/webhook}"
+LFG_URL="${LFG_URL:-http://127.0.0.1:5555/webhook}"
 LFG_HOST="${LFG_HOST:-claude}"
 LFG_TOKEN="${LFG_TOKEN:-}"
 

@@ -1,0 +1,6 @@
+{
+  "PreToolUse": [{ "command": "LFG_HOST=codex ~/.local/bin/lfg-hook.sh" }],
+  "PostToolUse": [{ "command": "LFG_HOST=codex ~/.local/bin/lfg-hook.sh" }],
+  "SessionStart": [{ "command": "LFG_HOST=codex ~/.local/bin/lfg-hook.sh" }],
+  "Stop": [{ "command": "LFG_HOST=codex ~/.local/bin/lfg-hook.sh" }]
+}

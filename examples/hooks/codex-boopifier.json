@@ -1,0 +1,6 @@
+{
+  "PreToolUse": [{ "command": "boopifier -c ~/.config/lfg/boopifier-codex.json" }],
+  "PostToolUse": [{ "command": "boopifier -c ~/.config/lfg/boopifier-codex.json" }],
+  "SessionStart": [{ "command": "boopifier -c ~/.config/lfg/boopifier-codex.json" }],
+  "Stop": [{ "command": "boopifier -c ~/.config/lfg/boopifier-codex.json" }]
+}
