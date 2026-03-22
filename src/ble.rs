@@ -1,7 +1,7 @@
 use std::time::Duration;
 use tokio::sync::RwLock;
 use std::sync::Arc;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use crate::event;
 use crate::render;
@@ -24,6 +24,8 @@ const CMD_BRIGHTNESS: &[u8] = &[0x05, 0x00, 0x04, 0x80, 100];
 const BLE_DEBOUNCE_SECS: f64 = 2.0;
 const BLE_POLL_SECS: f64 = 0.25;
 const BLE_HEARTBEAT_SECS: f64 = 30.0;
+const BLE_WRITE_TIMEOUT_SECS: u64 = 5;
+const BLE_MAX_CONSECUTIVE_TIMEOUTS: u32 = 3;
 
 const MAX_RECONNECT_DELAY_SECS: u64 = 60;
 
@@ -127,6 +129,7 @@ pub async fn ble_loop(state: Arc<RwLock<DisplayState>>) {
         let mut last_hash: Option<String> = None;
         let mut change_detected_at: Option<tokio::time::Instant> = None;
         let mut last_successful_write = tokio::time::Instant::now();
+        let mut consecutive_timeouts: u32 = 0;
 
         info!("BLE render loop started");
 
@@ -144,16 +147,23 @@ pub async fn ble_loop(state: Arc<RwLock<DisplayState>>) {
             }
 
             // Check connectivity
-            match peripheral.is_connected().await {
-                Ok(false) => {
+            match tokio::time::timeout(
+                Duration::from_secs(BLE_WRITE_TIMEOUT_SECS),
+                peripheral.is_connected(),
+            ).await {
+                Ok(Ok(false)) => {
                     warn!("BLE device disconnected — reconnecting");
                     break;
                 }
-                Err(e) => {
+                Ok(Err(e)) => {
                     warn!("BLE connectivity check failed: {} — reconnecting", e);
                     break;
                 }
-                Ok(true) => {}
+                Err(_) => {
+                    warn!("BLE connectivity check timed out — device stuck, reconnecting");
+                    break;
+                }
+                Ok(Ok(true)) => {}
             }
 
             // Check stale under write lock, then snapshot under read
@@ -182,22 +192,41 @@ pub async fn ble_loop(state: Arc<RwLock<DisplayState>>) {
                     let gif_data = render::build_animated_gif(&snap, any_requesting);
                     let packets = build_gif_packets(&gif_data);
 
+                    debug!("BLE loop: sending {} GIF packets", packets.len());
                     let mut send_ok = true;
+                    let mut timed_out = false;
                     for pkt in &packets {
-                        match peripheral.write(
-                            &write_char,
-                            pkt,
-                            WriteType::WithResponse,
-                        ).await {
-                            Ok(_) => {
+                        let write_result = tokio::time::timeout(
+                            Duration::from_secs(BLE_WRITE_TIMEOUT_SECS),
+                            peripheral.write(&write_char, pkt, WriteType::WithResponse),
+                        ).await;
+                        match write_result {
+                            Ok(Ok(_)) => {
+                                consecutive_timeouts = 0;
                                 if packets.len() > 1 {
                                     tokio::time::sleep(Duration::from_millis(100)).await;
                                 }
                             }
-                            Err(e) => {
+                            Ok(Err(e)) => {
                                 warn!("BLE write error: {} — reconnecting", e);
                                 send_ok = false;
                                 break;
+                            }
+                            Err(_) => {
+                                consecutive_timeouts += 1;
+                                warn!(
+                                    "BLE write timed out after {}s (consecutive_timeouts = {})",
+                                    BLE_WRITE_TIMEOUT_SECS, consecutive_timeouts
+                                );
+                                if consecutive_timeouts >= BLE_MAX_CONSECUTIVE_TIMEOUTS {
+                                    warn!(
+                                        "{} consecutive BLE write timeouts — device stuck, reconnecting",
+                                        consecutive_timeouts
+                                    );
+                                    send_ok = false;
+                                }
+                                timed_out = true;
+                                break; // abandon this GIF send either way
                             }
                         }
                     }
@@ -206,27 +235,51 @@ pub async fn ble_loop(state: Arc<RwLock<DisplayState>>) {
                         break; // reconnect
                     }
 
-                    last_hash = Some(current_hash);
-                    change_detected_at = None;
-                    last_successful_write = now;
-                    info!(
-                        "Sent animated GIF ({} bytes, {})",
-                        gif_data.len(),
-                        if any_requesting { "fast" } else { "normal" }
-                    );
+                    if !timed_out {
+                        last_hash = Some(current_hash);
+                        change_detected_at = None;
+                        last_successful_write = now;
+                        info!(
+                            "Sent animated GIF ({} bytes, {})",
+                            gif_data.len(),
+                            if any_requesting { "fast" } else { "normal" }
+                        );
+                    }
+                    // If timed_out but below threshold: don't update last_hash,
+                    // so next poll cycle will re-attempt the send
                 }
             } else {
                 change_detected_at = None;
 
                 // Heartbeat: send brightness command periodically to detect stale connections
                 if now.duration_since(last_successful_write).as_secs_f64() >= BLE_HEARTBEAT_SECS {
-                    match peripheral.write(&write_char, CMD_BRIGHTNESS, WriteType::WithResponse).await {
-                        Ok(_) => {
+                    debug!("BLE loop: sending heartbeat");
+                    let hb_result = tokio::time::timeout(
+                        Duration::from_secs(BLE_WRITE_TIMEOUT_SECS),
+                        peripheral.write(&write_char, CMD_BRIGHTNESS, WriteType::WithResponse),
+                    ).await;
+                    match hb_result {
+                        Ok(Ok(_)) => {
+                            consecutive_timeouts = 0;
                             last_successful_write = now;
                         }
-                        Err(e) => {
+                        Ok(Err(e)) => {
                             warn!("BLE heartbeat failed: {} — reconnecting", e);
                             break;
+                        }
+                        Err(_) => {
+                            consecutive_timeouts += 1;
+                            warn!(
+                                "BLE heartbeat timed out after {}s (consecutive_timeouts = {})",
+                                BLE_WRITE_TIMEOUT_SECS, consecutive_timeouts
+                            );
+                            if consecutive_timeouts >= BLE_MAX_CONSECUTIVE_TIMEOUTS {
+                                warn!(
+                                    "{} consecutive BLE write timeouts — device stuck, reconnecting",
+                                    consecutive_timeouts
+                                );
+                                break;
+                            }
                         }
                     }
                 }
@@ -237,7 +290,13 @@ pub async fn ble_loop(state: Arc<RwLock<DisplayState>>) {
 
         // Cleanup on disconnect
         info!("Disconnecting BLE peripheral for reconnection...");
-        let _ = peripheral.disconnect().await;
+        match tokio::time::timeout(
+            Duration::from_secs(BLE_WRITE_TIMEOUT_SECS),
+            peripheral.disconnect(),
+        ).await {
+            Ok(_) => debug!("BLE disconnect completed"),
+            Err(_) => warn!("BLE disconnect timed out — proceeding with reconnection anyway"),
+        }
         tokio::time::sleep(Duration::from_secs(3)).await;
         info!("Attempting BLE reconnection...");
     }
@@ -287,14 +346,36 @@ async fn connect_ble(
     };
     info!("Found {} at {:?}", idm_name, idm.id());
 
-    if let Err(e) = idm.connect().await {
-        warn!("BLE connect to {} failed: {}", idm_name, e);
-        return None;
+    match tokio::time::timeout(
+        Duration::from_secs(10),
+        idm.connect(),
+    ).await {
+        Ok(Ok(_)) => {}
+        Ok(Err(e)) => {
+            warn!("BLE connect to {} failed: {}", idm_name, e);
+            return None;
+        }
+        Err(_) => {
+            warn!("BLE connect to {} timed out after 10s — stale device?", idm_name);
+            let _ = tokio::time::timeout(Duration::from_secs(2), idm.disconnect()).await;
+            return None;
+        }
     }
-    if let Err(e) = idm.discover_services().await {
-        warn!("BLE service discovery failed: {}", e);
-        let _ = idm.disconnect().await;
-        return None;
+    match tokio::time::timeout(
+        Duration::from_secs(10),
+        idm.discover_services(),
+    ).await {
+        Ok(Ok(_)) => {}
+        Ok(Err(e)) => {
+            warn!("BLE service discovery failed: {}", e);
+            let _ = tokio::time::timeout(Duration::from_secs(2), idm.disconnect()).await;
+            return None;
+        }
+        Err(_) => {
+            warn!("BLE service discovery timed out after 10s");
+            let _ = tokio::time::timeout(Duration::from_secs(2), idm.disconnect()).await;
+            return None;
+        }
     }
 
     // Find write characteristic (resolve once, cache the handle)
