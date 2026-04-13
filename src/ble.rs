@@ -187,9 +187,16 @@ pub async fn ble_loop(state: Arc<RwLock<DisplayState>>) {
                     let mut send_ok = true;
                     let mut timed_out = false;
                     for pkt in &packets {
+                        // GIF data uses WriteWithoutResponse: the iDotMatrix firmware
+                        // periodically stops ACK'ing packets (observed every ~1h), which
+                        // made WriteWithResponse hang for 5s per packet and freeze the
+                        // display for ~15s while consecutive_timeouts climbed. The 100ms
+                        // inter-packet sleep below is effectively manual flow control,
+                        // and the heartbeat (still WriteWithResponse) keeps us honest
+                        // about whether the device is actually alive.
                         let write_result = tokio::time::timeout(
                             Duration::from_secs(BLE_WRITE_TIMEOUT_SECS),
-                            peripheral.write(&write_char, pkt, WriteType::WithResponse),
+                            peripheral.write(&write_char, pkt, WriteType::WithoutResponse),
                         ).await;
                         match write_result {
                             Ok(Ok(_)) => {
