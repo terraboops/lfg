@@ -69,11 +69,11 @@ async fn main() {
     info!("Themes:   curl -s localhost:{}/theme", args.port);
     info!("Set:      curl -sX POST localhost:{}/theme/0", args.port);
 
-    // BLE render loop
+    // BLE render loop (wrapped in supervisor: respawns on panic, aborts on wedge)
     if !args.no_ble {
         let ble_state = shared.clone();
         tokio::spawn(async move {
-            ble::ble_loop(ble_state).await;
+            ble::ble_supervisor(ble_state).await;
         });
     }
 

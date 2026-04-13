@@ -17,6 +17,7 @@ pub fn handle_event(
         return;
     }
 
+    state.last_hook_event_at = Instant::now();
     state.stats.unique_agents.insert(session_id.to_string());
 
     if !state.session_map.contains_key(session_id) {

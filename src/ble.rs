@@ -98,13 +98,16 @@ pub async fn ble_loop(state: Arc<RwLock<DisplayState>>) {
     let mut consecutive_failures: u32 = 0;
 
     loop {
-        // Check for force-reconnect flag
+        // Check for force-reconnect flag and reset watchdog baseline
+        // (connect_ble has its own internal timeouts; the supervisor watchdog
+        // should only scrutinize the steady-state inner loop).
         {
             let mut s = state.write().await;
             if s.force_ble_reconnect {
                 s.force_ble_reconnect = false;
                 info!("Force BLE reconnect requested");
             }
+            s.last_gif_sent_at = std::time::Instant::now();
         }
 
         // Try to connect (reusing the adapter)
@@ -239,6 +242,7 @@ pub async fn ble_loop(state: Arc<RwLock<DisplayState>>) {
                         last_hash = Some(current_hash);
                         change_detected_at = None;
                         last_successful_write = now;
+                        state.write().await.last_gif_sent_at = std::time::Instant::now();
                         info!(
                             "Sent animated GIF ({} bytes, {})",
                             gif_data.len(),
@@ -410,4 +414,75 @@ async fn connect_ble(
 
     info!("Connected to iDotMatrix — screen ON");
     Some((idm, write_char))
+}
+
+/// Supervises `ble_loop`. Restarts on exit/panic and escalates stuck-state
+/// detection: first sets `force_ble_reconnect` to let the loop break out
+/// cooperatively; if the loop stays wedged past the grace period, aborts
+/// the task and respawns it.
+pub async fn ble_supervisor(state: Arc<RwLock<DisplayState>>) {
+    const CHECK_INTERVAL_SECS: u64 = 5;
+    const STUCK_THRESHOLD_SECS: f64 = 20.0;
+
+    loop {
+        let task_state = state.clone();
+        let mut handle = tokio::spawn(async move { ble_loop(task_state).await });
+        let mut flag_set_at: Option<std::time::Instant> = None;
+
+        loop {
+            tokio::time::sleep(Duration::from_secs(CHECK_INTERVAL_SECS)).await;
+
+            if handle.is_finished() {
+                match (&mut handle).await {
+                    Ok(()) => warn!("BLE loop exited — respawning in 3s"),
+                    Err(e) if e.is_cancelled() => {
+                        warn!("BLE loop aborted by watchdog — respawning in 3s")
+                    }
+                    Err(e) => warn!("BLE loop panicked: {} — respawning in 3s", e),
+                }
+                break;
+            }
+
+            let (gif_stale_secs, events_since_gif, flag_still_set) = {
+                let s = state.read().await;
+                let now = std::time::Instant::now();
+                (
+                    now.duration_since(s.last_gif_sent_at).as_secs_f64(),
+                    s.last_hook_event_at > s.last_gif_sent_at,
+                    s.force_ble_reconnect,
+                )
+            };
+
+            let is_stuck = events_since_gif && gif_stale_secs > STUCK_THRESHOLD_SECS;
+            if !is_stuck {
+                flag_set_at = None;
+                continue;
+            }
+
+            match flag_set_at {
+                None => {
+                    warn!(
+                        "BLE watchdog: no GIF sent in {:.1}s despite recent hook events — forcing reconnect",
+                        gif_stale_secs
+                    );
+                    state.write().await.force_ble_reconnect = true;
+                    flag_set_at = Some(std::time::Instant::now());
+                }
+                Some(set_at) => {
+                    let grace = set_at.elapsed().as_secs_f64();
+                    if flag_still_set && grace >= CHECK_INTERVAL_SECS as f64 {
+                        warn!(
+                            "BLE watchdog: loop wedged for {:.1}s after force_reconnect flag — aborting task",
+                            gif_stale_secs
+                        );
+                        handle.abort();
+                        let _ = (&mut handle).await;
+                        break;
+                    }
+                }
+            }
+        }
+
+        tokio::time::sleep(Duration::from_secs(3)).await;
+    }
 }

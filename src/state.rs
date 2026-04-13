@@ -151,6 +151,8 @@ pub struct DisplayState {
     pub stats_display: StatsDisplay,
     pub db_conn: Option<Mutex<rusqlite::Connection>>,
     pub force_ble_reconnect: bool,
+    pub last_hook_event_at: Instant,
+    pub last_gif_sent_at: Instant,
 }
 
 impl std::fmt::Debug for DisplayState {
@@ -179,6 +181,8 @@ impl Default for DisplayState {
             stats_display: StatsDisplay::default(),
             db_conn: None,
             force_ble_reconnect: false,
+            last_hook_event_at: Instant::now(),
+            last_gif_sent_at: Instant::now(),
         }
     }
 }
