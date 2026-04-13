@@ -149,25 +149,13 @@ pub async fn ble_loop(state: Arc<RwLock<DisplayState>>) {
                 }
             }
 
-            // Check connectivity
-            match tokio::time::timeout(
-                Duration::from_secs(BLE_WRITE_TIMEOUT_SECS),
-                peripheral.is_connected(),
-            ).await {
-                Ok(Ok(false)) => {
-                    warn!("BLE device disconnected — reconnecting");
-                    break;
-                }
-                Ok(Err(e)) => {
-                    warn!("BLE connectivity check failed: {} — reconnecting", e);
-                    break;
-                }
-                Err(_) => {
-                    warn!("BLE connectivity check timed out — device stuck, reconnecting");
-                    break;
-                }
-                Ok(Ok(true)) => {}
-            }
+            // Note: no per-tick is_connected() check. On CoreBluetooth that call
+            // isn't actually a cache lookup — it can stall behind in-flight
+            // operations and trip our 5s timeout during heavy write activity,
+            // forcing spurious reconnects on a device that's perfectly healthy.
+            // Real disconnects are caught by the write path (explicit error) and
+            // by the 30s heartbeat during idle stretches; the v0.2.0 watchdog
+            // provides the final safety net if the loop ever stops progressing.
 
             // Check stale under write lock, then snapshot under read
             {
