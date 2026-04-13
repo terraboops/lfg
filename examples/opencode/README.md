@@ -29,6 +29,14 @@ mkdir -p ~/.config/opencode/plugins/
 cp examples/opencode/lfg-bridge.js ~/.config/opencode/plugins/
 ```
 
+Then add the `plugin` key to `~/.config/opencode/opencode.json`:
+
+```json
+{
+  "plugin": ["./plugins/lfg-bridge.js"]
+}
+```
+
 ### Option 2: Project-Specific Installation
 
 ```bash
@@ -37,6 +45,14 @@ mkdir -p .opencode/plugins/
 
 # Copy the plugin
 cp examples/opencode/lfg-bridge.js .opencode/plugins/
+```
+
+Then add the `plugin` key to your project's `opencode.json`:
+
+```json
+{
+  "plugin": ["./plugins/lfg-bridge.js"]
+}
 ```
 
 ## Configuration
@@ -91,7 +107,7 @@ echo $LFG_WEBHOOK_URL
 
 Check lfg is running and listening on the expected port:
 ```bash
-curl http://localhost:6969/health
+curl http://localhost:6969/status
 ```
 
 ## How It Works

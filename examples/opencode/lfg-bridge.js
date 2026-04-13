@@ -1,35 +1,33 @@
 /**
  * LFG Bridge Plugin for OpenCode
- * 
- * This plugin sends events to the lfg LED panel server when OpenCode tools
- * are executed, allowing real-time visualization of agent activity.
- * 
+ *
+ * Sends events to the lfg LED panel server when OpenCode tools are executed,
+ * allowing real-time visualization of agent activity.
+ *
  * Installation:
- * 1. Copy this file to ~/.config/opencode/plugins/lfg-bridge.js (global)
- *    OR .opencode/plugins/lfg-bridge.js (project-specific)
- * 2. Set LFG_WEBHOOK_URL environment variable (default: http://localhost:6969/webhook)
- * 3. Restart OpenCode
+ * 1. Copy this file to ~/.config/opencode/plugins/lfg-bridge.js
+ * 2. Add to ~/.config/opencode/opencode.json:
+ *      "plugin": ["./plugins/lfg-bridge.js"]
+ * 3. Set LFG_WEBHOOK_URL if lfg is not on the default port (optional)
+ * 4. Restart OpenCode
  */
 
 const LFG_WEBHOOK_URL = process.env.LFG_WEBHOOK_URL || "http://localhost:6969/webhook";
 const LFG_HOST_IDENTIFIER = "opencode";
 
 /**
- * Send event to lfg webhook
+ * Send event to lfg webhook.
+ * Wire format: POST /webhook?host=<host>  { "text": "EventType|sessionID|toolName" }
  */
-async function sendToLfg(eventType, payload) {
+async function sendToLfg(eventType, sessionID, toolName) {
+  const url = new URL(LFG_WEBHOOK_URL);
+  url.searchParams.set("host", LFG_HOST_IDENTIFIER);
   try {
-    const response = await fetch(LFG_WEBHOOK_URL, {
+    const response = await fetch(url.toString(), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        host: LFG_HOST_IDENTIFIER,
-        event: eventType,
-        timestamp: Date.now(),
-        ...payload
-      })
+      body: JSON.stringify({ text: `${eventType}|${sessionID}|${toolName}` })
     });
-
     if (!response.ok) {
       console.error(`[lfg-bridge] Webhook failed: ${response.status} ${response.statusText}`);
     }
@@ -39,94 +37,31 @@ async function sendToLfg(eventType, payload) {
 }
 
 /**
- * LFG Bridge Plugin
- * Hooks into OpenCode events and forwards them to lfg
+ * LFG Bridge Plugin — implements the OpenCode PluginModule interface.
+ * The `server` export is required by OpenCode's plugin loader.
  */
-export const LfgBridge = async ({ project, client, $, directory, worktree }) => {
-  console.log("[lfg-bridge] Plugin initialized");
-  console.log(`[lfg-bridge] Webhook URL: ${LFG_WEBHOOK_URL}`);
-
+export const server = async ({ project, client, $, directory, worktree }) => {
   return {
-    /**
-     * Fires before a tool is executed
-     * Maps to lfg: PreToolUse
-     */
+    /** Fires before a tool is executed → PreToolUse */
     "tool.execute.before": async (input, output) => {
-      await sendToLfg("PreToolUse", {
-        tool: input.tool,
-        args: output.args,
-        cwd: directory,
-        worktree: worktree
-      });
+      await sendToLfg("PreToolUse", input.sessionID ?? "", input.tool ?? "");
     },
 
-    /**
-     * Fires after a tool is executed
-     * Maps to lfg: PostToolUse
-     */
+    /** Fires after a tool is executed → PostToolUse */
     "tool.execute.after": async (input, output) => {
-      await sendToLfg("PostToolUse", {
-        tool: input.tool,
-        args: output.args,
-        result: output.result,
-        cwd: directory,
-        worktree: worktree
-      });
+      await sendToLfg("PostToolUse", input.sessionID ?? "", input.tool ?? "");
     },
 
-    /**
-     * Fires when a permission is requested
-     * Maps to lfg: PermissionRequest
-     */
-    "permission.asked": async (input, output) => {
-      await sendToLfg("PermissionRequest", {
-        permission: input.permission,
-        message: input.message
-      });
+    /** Fires when permission is requested → PermissionRequest */
+    "permission.ask": async (input, output) => {
+      await sendToLfg("PermissionRequest", input.sessionID ?? "", "");
     },
 
-    /**
-     * Fires when a permission is replied to
-     * Maps to lfg: PermissionRequest (with response)
-     */
-    "permission.replied": async (input, output) => {
-      await sendToLfg("PermissionRequest", {
-        permission: input.permission,
-        granted: output.granted,
-        message: input.message
-      });
-    },
-
-    /**
-     * Fires when session becomes idle (completed)
-     * Maps to lfg: Stop / SessionEnd
-     */
-    "session.idle": async (input, output) => {
-      await sendToLfg("Stop", {
-        reason: "session_idle",
-        cwd: directory
-      });
-    },
-
-    /**
-     * Fires when session errors
-     */
-    "session.error": async (input, output) => {
-      await sendToLfg("Stop", {
-        reason: "error",
-        error: input.error?.message || "Unknown error",
-        cwd: directory
-      });
-    },
-
-    /**
-     * Fires on any event (catch-all for debugging)
-     */
+    /** Catch-all: detect session.idle and session.error → Stop */
     event: async ({ event }) => {
-      // Log all events for debugging (optional)
-      // console.log(`[lfg-bridge] Event: ${event.type}`);
-    }
+      if (event.type === "session.idle" || event.type === "session.error") {
+        await sendToLfg("Stop", event.properties?.sessionID ?? "", "");
+      }
+    },
   };
 };
-
-export default LfgBridge;

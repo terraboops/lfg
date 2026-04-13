@@ -1,11 +1,10 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "name": "OpenCode with LFG",
-  "plugins": [],
+  "plugin": ["./plugins/lfg-bridge.js"],
   "commands": {
     "lfg-status": {
       "description": "Check lfg connection status",
-      "prompt": "Check if the lfg LED panel is responding by running: curl -s http://localhost:6969/health || echo 'lfg not running'"
+      "prompt": "Check if the lfg LED panel is responding by running: curl -s http://localhost:6969/status || echo 'lfg not running'"
     }
   }
 }
