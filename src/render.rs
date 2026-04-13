@@ -387,7 +387,22 @@ pub fn build_animated_gif(snap: &FrameSnapshot, any_requesting: bool) -> Vec<u8>
 
     // Build a global 256-color palette using NeuQuant
     let nq = color_quant::NeuQuant::new(1, 256, &all_pixels);
-    let palette = nq.color_map_rgb();
+    let mut palette = nq.color_map_rgb();
+
+    // Pin pure black at palette index 0. The GIF Logical Screen Descriptor's
+    // background_color_index defaults to 0, and the iDotMatrix firmware uses
+    // it as the "off" colour. NeuQuant's ordering is input-dependent, so
+    // without this the background drifts to whatever colour happens to win
+    // index 0 — frequently a dim purple/orange/etc.
+    let black_idx = nq.index_of(&[0, 0, 0, 255]);
+    if black_idx != 0 {
+        palette.swap(0, black_idx * 3);
+        palette.swap(1, black_idx * 3 + 1);
+        palette.swap(2, black_idx * 3 + 2);
+    }
+    palette[0] = 0;
+    palette[1] = 0;
+    palette[2] = 0;
 
     // Encode GIF with global color table
     let mut buf = Cursor::new(Vec::new());
@@ -401,11 +416,19 @@ pub fn build_animated_gif(snap: &FrameSnapshot, any_requesting: bool) -> Vec<u8>
         encoder.set_repeat(gif::Repeat::Infinite).unwrap();
 
         for rgb in &frame_rgb {
-            // Map each pixel to nearest palette index
+            // Map each pixel to nearest palette index, mirroring the 0 ↔ black_idx
+            // swap applied to the palette above.
             let mut indices = vec![0u8; pixel_count];
             for i in 0..pixel_count {
                 let off = i * 3;
-                indices[i] = nq.index_of(&[rgb[off], rgb[off + 1], rgb[off + 2], 255]) as u8;
+                let raw = nq.index_of(&[rgb[off], rgb[off + 1], rgb[off + 2], 255]);
+                indices[i] = if raw == black_idx {
+                    0
+                } else if raw == 0 {
+                    black_idx as u8
+                } else {
+                    raw as u8
+                };
             }
 
             let mut frame = gif::Frame::default();
