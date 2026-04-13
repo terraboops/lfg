@@ -12,8 +12,7 @@ This integration uses OpenCode's plugin system to send events directly to lfg wh
 |----------------|-----------|---------------|
 | `tool.execute.before` | `PreToolUse` | Tool execution started |
 | `tool.execute.after` | `PostToolUse` | Tool execution completed |
-| `permission.asked` | `PermissionRequest` | Permission prompt shown |
-| `permission.replied` | `PermissionRequest` | Permission granted/denied |
+| `permission.ask` | `PermissionRequest` | Permission prompt shown |
 | `session.idle` | `Stop` | Session completed |
 | `session.error` | `Stop` | Session errored |
 
