@@ -325,6 +325,31 @@ pub fn sprite_themes() -> Vec<SpriteTheme> {
                 ((60,255,60),(160,255,160)),
             ],
         ),
+        // 11: Tamagotchi
+        theme(
+            "Tamagotchi",
+            &[
+                ["..PPPP..", ".PPPPPP.", "PP.PP.PP", "PPPPPPPP",
+                 "PP.SS.PP", "PPPPPPPP", "........", ".S....S."],
+                ["..PPPP..", ".PPPPPP.", "PP.PP.PP", "PPPPPPPP",
+                 "PP.SS.PP", "PPPPPPPP", "........", "S......S"],
+                ["..PPPP..", ".PPPPPP.", "PP.PP.PP", "PPPPPPPP",
+                 "PPPSPPPP", ".PPPPPP.", "........", ".S....S."],
+                ["..PPPP..", ".PPPPPP.", "PP.PP.PP", "PPPPPPPP",
+                 "PP.SS.PP", "PPPPPPPP", "........", ".S....S."],
+                ["........", "..PPPP..", ".PPPPPP.", "PP.PP.PP",
+                 "PPPPPPPP", "PP.SS.PP", ".PPPPPP.", ".S....S."],
+                ["..PPPP..", ".PPPPPP.", "PP.PP.PP", "PPPPPPPP",
+                 "PP.SS.PP", "PPPPPPPP", "........", "S......S"],
+            ],
+            &[
+                ((240,240,240),(60,60,60)),
+                ((255,200,50),(180,100,20)),
+                ((100,220,255),(30,100,160)),
+                ((255,130,180),(200,50,100)),
+                ((150,255,130),(50,160,40)),
+            ],
+        ),
     ]
 }
 
