@@ -255,6 +255,11 @@ pub async fn ble_loop(state: Arc<RwLock<DisplayState>>) {
             } else {
                 change_detected_at = None;
 
+                // Hash matches what's on the device — loop is caught up. Tell
+                // the watchdog so it doesn't trip on hook events that don't
+                // affect display state (e.g. Notification).
+                state.write().await.last_gif_sent_at = std::time::Instant::now();
+
                 // Heartbeat: send brightness command periodically to detect stale connections
                 if now.duration_since(last_successful_write).as_secs_f64() >= BLE_HEARTBEAT_SECS {
                     debug!("BLE loop: sending heartbeat");
