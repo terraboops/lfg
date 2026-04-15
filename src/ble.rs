@@ -24,15 +24,22 @@ const CMD_BRIGHTNESS: &[u8] = &[0x05, 0x00, 0x04, 0x80, 100];
 const BLE_DEBOUNCE_SECS: f64 = 2.0;
 const BLE_POLL_SECS: f64 = 0.25;
 const BLE_HEARTBEAT_SECS: f64 = 30.0;
-const BLE_WRITE_TIMEOUT_SECS: u64 = 5;
-const BLE_MAX_CONSECUTIVE_TIMEOUTS: u32 = 3;
-// Inter-packet pacing for multi-block GIF sends. The 8none1 reverse-engineering
-// doc says: "wait for the 0500010001 notification, or much easier, just sleep
-// for a second". 100ms (our previous value) was enough to overflow the firmware
-// buffer over a few thousand sends, manifesting as periodic hangs even with
-// WriteWithoutResponse because CoreBluetooth's canSendWriteWithoutResponse gate
-// would block the next write until the stack drained.
-const BLE_INTER_PACKET_MS: u64 = 1000;
+// Tight write timeout + low consecutive threshold so that when the iDotMatrix
+// firmware wedges (it does, periodically, and we can't prevent it from the
+// client side), we detect and reconnect within ~4s instead of ~15s.
+const BLE_WRITE_TIMEOUT_SECS: u64 = 2;
+const BLE_MAX_CONSECUTIVE_TIMEOUTS: u32 = 2;
+// Inter-packet pacing for multi-block GIF sends. v0.2.5 set this to 1000ms per
+// the 8none1 doc's "or just sleep for a second" advice but it didn't reduce
+// freezes (and may have increased them — slower pacing means each send spans
+// more BLE connection intervals). Settled at 250ms: 2.5x the original 100ms,
+// still well under the iDotMatrix's apparent block-timeout window.
+const BLE_INTER_PACKET_MS: u64 = 250;
+// On reconnect, peripheral.disconnect() often hangs because the device is
+// already in a wedged state. Don't wait long — drop the handle and start a
+// fresh scan/connect cycle ASAP so the user sees the display recover quickly.
+const BLE_DISCONNECT_TIMEOUT_SECS: u64 = 1;
+const BLE_RECONNECT_BACKOFF_SECS: u64 = 1;
 
 const MAX_RECONNECT_DELAY_SECS: u64 = 60;
 
@@ -299,16 +306,18 @@ pub async fn ble_loop(state: Arc<RwLock<DisplayState>>) {
             tokio::time::sleep(Duration::from_secs_f64(BLE_POLL_SECS)).await;
         }
 
-        // Cleanup on disconnect
+        // Cleanup on disconnect — keep this short. If the device is wedged
+        // (the usual reason we're here), peripheral.disconnect() will hang
+        // anyway; we'd rather drop the handle and start scanning fresh.
         info!("Disconnecting BLE peripheral for reconnection...");
         match tokio::time::timeout(
-            Duration::from_secs(BLE_WRITE_TIMEOUT_SECS),
+            Duration::from_secs(BLE_DISCONNECT_TIMEOUT_SECS),
             peripheral.disconnect(),
         ).await {
             Ok(_) => debug!("BLE disconnect completed"),
             Err(_) => warn!("BLE disconnect timed out — proceeding with reconnection anyway"),
         }
-        tokio::time::sleep(Duration::from_secs(3)).await;
+        tokio::time::sleep(Duration::from_secs(BLE_RECONNECT_BACKOFF_SECS)).await;
         info!("Attempting BLE reconnection...");
     }
 }

@@ -362,7 +362,7 @@ pub fn build_frame(canvas: &mut Canvas, snap: &FrameSnapshot, tick: usize) {
 }
 
 pub fn build_animated_gif(snap: &FrameSnapshot, any_requesting: bool) -> Vec<u8> {
-    let frame_delay_cs = if any_requesting { 50u16 } else { 125u16 }; // centiseconds
+    let frame_delay_cs = if any_requesting { 25u16 } else { 60u16 }; // centiseconds
     let mut canvas = Canvas::new();
     let pixel_count = DISPLAY_SIZE * DISPLAY_SIZE;
 
