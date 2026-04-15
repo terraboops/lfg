@@ -26,6 +26,13 @@ const BLE_POLL_SECS: f64 = 0.25;
 const BLE_HEARTBEAT_SECS: f64 = 30.0;
 const BLE_WRITE_TIMEOUT_SECS: u64 = 5;
 const BLE_MAX_CONSECUTIVE_TIMEOUTS: u32 = 3;
+// Inter-packet pacing for multi-block GIF sends. The 8none1 reverse-engineering
+// doc says: "wait for the 0500010001 notification, or much easier, just sleep
+// for a second". 100ms (our previous value) was enough to overflow the firmware
+// buffer over a few thousand sends, manifesting as periodic hangs even with
+// WriteWithoutResponse because CoreBluetooth's canSendWriteWithoutResponse gate
+// would block the next write until the stack drained.
+const BLE_INTER_PACKET_MS: u64 = 1000;
 
 const MAX_RECONNECT_DELAY_SECS: u64 = 60;
 
@@ -202,7 +209,7 @@ pub async fn ble_loop(state: Arc<RwLock<DisplayState>>) {
                             Ok(Ok(_)) => {
                                 consecutive_timeouts = 0;
                                 if packets.len() > 1 {
-                                    tokio::time::sleep(Duration::from_millis(100)).await;
+                                    tokio::time::sleep(Duration::from_millis(BLE_INTER_PACKET_MS)).await;
                                 }
                             }
                             Ok(Err(e)) => {
